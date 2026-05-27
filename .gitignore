@@ -1,0 +1,10 @@
+.DS_Store
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Redundant outputs
+data/alt_raw/
+outputs/alt_dataset_trials/
+outputs/tables/ml_cluster_labels.csv
+outputs/tables/ml_benchmark_case_labels.csv
