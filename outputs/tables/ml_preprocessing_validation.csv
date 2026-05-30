@@ -1,0 +1,6 @@
+check,status
+Chỉ dùng longitude và latitude làm feature clustering,PASS
+Đã loại dòng thiếu tọa độ,PASS
+Tọa độ nằm trong khoảng địa lý hợp lệ,PASS
+Đã chuẩn hóa tọa độ trước khi clustering,PASS
+Type/size/trigger chỉ dùng để diễn giải,PASS

@@ -1,0 +1,4 @@
+case_id,role,best_model,best_ari,best_nmi,clusters,noise_rate,case_note
+aggregation,denclue_strong_case,DENCLUE,0.9978039882318176,0.9956972087142977,7,0.0,DENCLUE xử lý cụm mật độ không đều tốt hơn các baseline dạng centroid/model.
+pathbased,dbscan_strong_case,DBSCAN,0.8812363734308486,0.8483047717390507,2,0.37333333333333335,Cấu trúc dạng đường đi hợp với density connectivity hơn density attractor.
+spiral,dbscan_strong_case,DBSCAN,1.0,1.0,3,0.0,DENCLUE dễ chia nhỏ cụm cong liên tục; DBSCAN phù hợp hơn trong case này.

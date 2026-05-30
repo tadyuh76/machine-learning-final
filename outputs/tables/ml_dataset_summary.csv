@@ -1,0 +1,2 @@
+dataset,raw_rows,raw_columns,model_rows,model_columns,features,external_label_for_interpretation
+NASA Landslide Events,1693,23,1692,13,longitude|latitude,landslide_type
