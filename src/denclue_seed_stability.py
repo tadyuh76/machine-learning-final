@@ -53,8 +53,8 @@ def main() -> None:
     parser.add_argument("--denclue-sigma", type=float, default=0.235)
     parser.add_argument("--denclue-xi", type=float, default=0.002)
     parser.add_argument("--max-anchors", type=int, default=2000)
-    parser.add_argument("--dbscan-eps", type=float, default=0.20)
-    parser.add_argument("--dbscan-min-samples", type=int, default=5)
+    parser.add_argument("--dbscan-eps", type=float, default=0.40)
+    parser.add_argument("--dbscan-min-samples", type=int, default=12)
     parser.add_argument("--n-clusters", type=int, default=7)
     args = parser.parse_args()
 

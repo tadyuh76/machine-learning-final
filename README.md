@@ -1,83 +1,89 @@
 # Machine Learning Final - DENCLUE
 
-Repository này giữ các phần cần để chạy lại thí nghiệm DENCLUE trên dữ liệu NASA Landslide Events và benchmark clustering 2D.
+Project này dùng DENCLUE để phân cụm dữ liệu 2D và tìm hotspot sạt lở trong NASA Landslide Events.
 
-## Dataset
+DENCLUE là thuật toán chính của bài. Các mô hình như DBSCAN, KMeans, GMM và MeanShift được chạy thêm để đối chiếu cách định nghĩa cụm và đưa ra cái nhìn khách quan hơn.
 
-- Nguồn: Kaggle - NASA Landslide Events
+## Dữ liệu
+
 - File chính: `data/raw/landslide_catalog.csv`
-- Feature dùng cho clustering: `longitude`, `latitude`
+- Dataset benchmark: `data/raw/benchmark_cases/`
+- Feature đưa vào clustering: `longitude`, `latitude`
 - Cột dùng để diễn giải sau clustering: `landslide_type`, `landslide_size`, `trigger`, `country_name`
 
-Các cột mô tả như landslide type/size/trigger không được dùng làm input clustering. Chúng chỉ dùng để giải thích cụm sau khi thuật toán chạy xong.
+Các cột mô tả không được đưa vào thuật toán phân cụm. Nhóm chỉ dùng chúng sau khi đã có nhãn cụm để đọc profile từng hotspot.
 
-## Pipeline
-
-```bash
-pip install -r requirements.txt
-```
+## Chạy lại trên macOS
 
 ```bash
-python src/denclue_pipeline.py
+cd machine-learning-final
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r requirements.txt
 ```
 
-Pipeline sẽ:
+Chạy pipeline chính:
 
-1. đọc landslide catalog,
-2. lọc các dòng có tọa độ hợp lệ,
-3. chuẩn hóa `longitude` và `latitude`,
-4. tune DENCLUE theo `sigma` và `xi_quantile`,
-5. tune DBSCAN theo `eps` và `min_samples`,
-6. so sánh DENCLUE với KMeans, DBSCAN, GMM, MeanShift,
-7. xuất bảng và hình vào `outputs/`.
+```bash
+python3 src/denclue_pipeline.py
+```
 
-## Output chính
+Chạy thêm benchmark và seed stability:
+
+```bash
+python3 src/denclue_benchmark_cases.py
+python3 src/denclue_seed_stability.py
+```
+
+## Chạy lại trên Windows PowerShell
+
+```powershell
+cd machine-learning-final
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+py -m pip install -r requirements.txt
+```
+
+Nếu PowerShell không cho activate virtual environment, chạy tạm lệnh này trong cửa sổ PowerShell hiện tại rồi activate lại:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+Chạy pipeline chính:
+
+```powershell
+py src\denclue_pipeline.py
+```
+
+Chạy thêm benchmark và seed stability:
+
+```powershell
+py src\denclue_benchmark_cases.py
+py src\denclue_seed_stability.py
+```
+
+## Output cần kiểm tra
+
+Sau khi chạy xong, xem kết quả trong `outputs/`. Một số file chính:
 
 - `outputs/tables/ml_dataset_summary.csv`
 - `outputs/tables/ml_preprocessing_validation.csv`
 - `outputs/tables/ml_denclue_tuning.csv`
-- `outputs/tables/ml_dbscan_tuning.csv`
 - `outputs/tables/ml_clustering_metrics.csv`
 - `outputs/tables/ml_denclue_cluster_profile.csv`
-- `outputs/figures/ml_landslide_locations.png`
+- `outputs/tables/ml_benchmark_case_metrics.csv`
+- `outputs/tables/ml_seed_stability_summary.csv`
 - `outputs/figures/ml_denclue_clusters.png`
 - `outputs/figures/ml_denclue_density.png`
-- `outputs/figures/ml_dbscan_clusters.png`
-- `outputs/figures/ml_kmeans_clusters.png`
-- `outputs/figures/ml_gmm_clusters.png`
-- `outputs/figures/ml_meanshift_clusters.png`
-
-## Benchmark cases
-
-Chạy thêm các case benchmark:
-
-```bash
-python src/denclue_benchmark_cases.py
-```
-
-Script này dùng 3 dataset nhỏ trong `data/raw/benchmark_cases/`:
-
-- `aggregation.txt`: case DENCLUE hoạt động rất tốt.
-- `spiral.txt`: case DENCLUE hoạt động kém hơn DBSCAN.
-- `pathbased.txt`: case cấu trúc dạng path/connectivity, DBSCAN hợp hơn.
-
-Output chính:
-
-- `outputs/tables/ml_benchmark_case_summary.csv`
-- `outputs/tables/ml_benchmark_case_metrics.csv`
 - `outputs/figures/ml_benchmark_aggregation_comparison.png`
 - `outputs/figures/ml_failure_spiral_comparison.png`
 - `outputs/figures/ml_failure_pathbased_comparison.png`
 
-## Kiểm tra độ ổn định theo seed
+## Ghi chú ngắn
 
-```bash
-python src/denclue_seed_stability.py
-```
+- `src/denclue_pipeline.py` là pipeline chính cho NASA Landslide.
+- `src/denclue_benchmark_cases.py` dùng Aggregation, Spiral và Pathbased để kiểm tra điểm mạnh/yếu của DENCLUE.
+- `src/denclue_seed_stability.py` chạy lại vài seed để xem kết quả có dao động mạnh không.
+- Kết quả trong báo cáo nên đọc cùng hình scatter, không chỉ đọc một metric riêng lẻ.
 
-Phần này chạy lại các mô hình với vài seed khác nhau để kiểm tra kết quả có phụ thuộc quá mạnh vào random state hay không.
-
-Output chính:
-
-- `outputs/tables/ml_seed_stability_metrics.csv`
-- `outputs/tables/ml_seed_stability_summary.csv`

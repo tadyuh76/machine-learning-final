@@ -28,12 +28,14 @@ from sklearn.metrics import (
     silhouette_score,
 )
 from sklearn.mixture import GaussianMixture
+from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
 
 
 RANDOM_STATE = 42
 SPATIAL_FEATURES = ["longitude", "latitude"]
 PROFILE_COLUMNS = ["country_name", "landslide_type", "landslide_size", "trigger"]
+SPATIAL_VIEW_PADDING = 0.05
 
 
 def ensure_dirs(project_dir: Path) -> tuple[Path, Path]:
@@ -103,6 +105,7 @@ class SimpleDENCLUE:
     sigma: float = 0.235
     xi_quantile: float = 0.002
     merge_eps: float | None = None
+    merge_min_points: int = 3
     max_iter: int = 35
     tol: float = 1e-4
     max_anchors: int = 2000
@@ -141,9 +144,8 @@ class SimpleDENCLUE:
 
         labels = np.full(n_rows, -1, dtype=int)
         if valid.sum() >= 2:
-            # Gom các điểm hút gần nhau; điểm mật độ thấp được giữ là nhiễu.
             eps = self.merge_eps if self.merge_eps is not None else max(self.sigma * 0.50, 1e-6)
-            merged = DBSCAN(eps=eps, min_samples=3).fit_predict(attractors[valid])
+            merged = self._merge_attractors(attractors[valid], eps=eps)
             labels[valid] = merged
             unique = sorted(value for value in np.unique(labels) if value != -1)
             remap = {old: new for new, old in enumerate(unique)}
@@ -170,6 +172,52 @@ class SimpleDENCLUE:
             densities.append(np.exp(-dist2 / (2.0 * self.sigma**2)).sum(axis=1))
         return np.concatenate(densities)
 
+    def _merge_attractors(self, attractors: np.ndarray, eps: float) -> np.ndarray:
+        n_rows = attractors.shape[0]
+        labels = np.full(n_rows, -1, dtype=int)
+        if n_rows == 0:
+            return labels
+
+        neighbors = NearestNeighbors(radius=eps).fit(attractors).radius_neighbors(
+            attractors,
+            return_distance=False,
+        )
+
+        core_mask = np.array([len(items) >= self.merge_min_points for items in neighbors], dtype=bool)
+        parent = np.arange(n_rows)
+
+        def find(idx: int) -> int:
+            while parent[idx] != idx:
+                parent[idx] = parent[parent[idx]]
+                idx = parent[idx]
+            return idx
+
+        def union(left: int, right: int) -> None:
+            root_left = find(left)
+            root_right = find(right)
+            if root_left != root_right:
+                parent[root_right] = root_left
+
+        core_idx = np.flatnonzero(core_mask)
+        for left in core_idx:
+            for right in neighbors[left]:
+                if right > left and core_mask[right]:
+                    union(left, right)
+
+        root_to_label: dict[int, int] = {}
+        for idx in core_idx:
+            root = find(idx)
+            if root not in root_to_label:
+                root_to_label[root] = len(root_to_label)
+            labels[idx] = root_to_label[root]
+
+        for idx in np.flatnonzero(~core_mask):
+            near_core = [item for item in neighbors[idx] if core_mask[item]]
+            if len(near_core) > 0:
+                labels[idx] = labels[near_core[0]]
+
+        return labels
+
 
 def cluster_count(labels: np.ndarray) -> int:
     return len([value for value in np.unique(labels) if value != -1])
@@ -194,9 +242,11 @@ def safe_cluster_metrics(
     external_label: pd.Series | None = None,
 ) -> dict[str, float]:
     labels = np.asarray(labels)
+    metric_mask = labels != -1
     result: dict[str, float] = {
         "clusters": cluster_count(labels),
         "noise_rate": noise_rate(labels),
+        "internal_metric_points": int(metric_mask.sum()),
         "silhouette": np.nan,
         "calinski_harabasz": np.nan,
         "davies_bouldin": np.nan,
@@ -204,12 +254,14 @@ def safe_cluster_metrics(
         "nmi_landslide_type": np.nan,
     }
 
-    unique = np.unique(labels)
-    if 1 < len(unique) < len(labels):
+    metric_labels = labels[metric_mask]
+    metric_X = X[metric_mask]
+    unique = np.unique(metric_labels)
+    if 1 < len(unique) < len(metric_labels):
         try:
-            result["silhouette"] = float(silhouette_score(X, labels))
-            result["calinski_harabasz"] = float(calinski_harabasz_score(X, labels))
-            result["davies_bouldin"] = float(davies_bouldin_score(X, labels))
+            result["silhouette"] = float(silhouette_score(metric_X, metric_labels))
+            result["calinski_harabasz"] = float(calinski_harabasz_score(metric_X, metric_labels))
+            result["davies_bouldin"] = float(davies_bouldin_score(metric_X, metric_labels))
         except ValueError:
             pass
 
@@ -251,7 +303,11 @@ def tune_denclue(
             metrics = safe_cluster_metrics(X, labels, external_label)
             candidate_ok = 6 <= metrics["clusters"] <= 10 and metrics["noise_rate"] <= 0.35
             silhouette = metrics["silhouette"]
-            score = silhouette if candidate_ok and not np.isnan(silhouette) else -np.inf
+            score = (
+                silhouette - metrics["noise_rate"]
+                if candidate_ok and not np.isnan(silhouette)
+                else -np.inf
+            )
             row = {
                 "sigma": sigma,
                 "xi_quantile": xi_quantile,
@@ -300,7 +356,11 @@ def tune_dbscan(
             metrics = safe_cluster_metrics(X, labels, external_label)
             candidate_ok = 2 <= metrics["clusters"] <= 12 and metrics["noise_rate"] <= 0.45
             silhouette = metrics["silhouette"]
-            score = silhouette if candidate_ok and not np.isnan(silhouette) else -np.inf
+            score = (
+                silhouette - metrics["noise_rate"]
+                if candidate_ok and not np.isnan(silhouette)
+                else -np.inf
+            )
             row = {
                 "eps": eps,
                 "min_samples": min_samples,
@@ -316,7 +376,7 @@ def tune_dbscan(
                 best_row = row
 
     if best_labels is None or best_row is None:
-        raise RuntimeError("DBSCAN tuning did not produce a usable result.")
+        raise RuntimeError("Tuning DBSCAN không tạo được kết quả dùng được.")
 
     tuning = pd.DataFrame(rows)
     tuning["selected"] = (tuning["eps"] == best_row["eps"]) & (
@@ -423,14 +483,29 @@ def plot_category_distribution(model_df: pd.DataFrame, column: str, path: Path, 
     plt.close()
 
 
+def spatial_view_bounds(model_df: pd.DataFrame) -> tuple[float, float, float, float]:
+    min_lon = float(model_df["longitude"].min())
+    max_lon = float(model_df["longitude"].max())
+    min_lat = float(model_df["latitude"].min())
+    max_lat = float(model_df["latitude"].max())
+    lon_pad = max((max_lon - min_lon) * SPATIAL_VIEW_PADDING, 1.0)
+    lat_pad = max((max_lat - min_lat) * SPATIAL_VIEW_PADDING, 1.0)
+    return min_lon - lon_pad, max_lon + lon_pad, min_lat - lat_pad, max_lat + lat_pad
+
+
+def apply_spatial_view(model_df: pd.DataFrame) -> None:
+    min_lon, max_lon, min_lat, max_lat = spatial_view_bounds(model_df)
+    plt.xlim(min_lon, max_lon)
+    plt.ylim(min_lat, max_lat)
+
+
 def plot_world_scatter(model_df: pd.DataFrame, path: Path) -> None:
-    plt.figure(figsize=(9, 5.5))
+    plt.figure(figsize=(9, 6))
     plt.scatter(model_df["longitude"], model_df["latitude"], s=12, alpha=0.65, color="#4C78A8")
     plt.xlabel("Longitude")
     plt.ylabel("Latitude")
     plt.title("Vị trí các sự kiện sạt lở")
-    plt.xlim(-180, 180)
-    plt.ylim(-60, 80)
+    apply_spatial_view(model_df)
     plt.tight_layout()
     plt.savefig(path, dpi=180)
     plt.close()
@@ -454,6 +529,7 @@ def plot_clusters(model_df: pd.DataFrame, labels: np.ndarray, title: str, path: 
     plt.xlabel("Longitude")
     plt.ylabel("Latitude")
     plt.title(title)
+    apply_spatial_view(model_df)
     plt.legend(fontsize=8, loc="best", markerscale=1.4)
     plt.tight_layout()
     plt.savefig(path, dpi=180)
@@ -473,6 +549,7 @@ def plot_density(model_df: pd.DataFrame, density: np.ndarray, path: Path) -> Non
     plt.xlabel("Longitude")
     plt.ylabel("Latitude")
     plt.title("Mật độ ước lượng của DENCLUE")
+    apply_spatial_view(model_df)
     plt.colorbar(scatter, shrink=0.78, label="Mật độ ước lượng")
     plt.tight_layout()
     plt.savefig(path, dpi=180)

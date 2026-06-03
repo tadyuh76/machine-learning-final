@@ -69,17 +69,21 @@ def scale_xy(df: pd.DataFrame) -> np.ndarray:
 
 def evaluate_labels(X: np.ndarray, y_true: np.ndarray, labels: np.ndarray) -> dict[str, float]:
     labels = np.asarray(labels)
+    metric_mask = labels != -1
     metrics = {
         "clusters": cluster_count(labels),
         "noise_rate": noise_rate(labels),
+        "internal_metric_points": int(metric_mask.sum()),
         "ari": float(adjusted_rand_score(y_true, labels)),
         "nmi": float(normalized_mutual_info_score(y_true, labels)),
         "silhouette": np.nan,
     }
-    unique_count = len(np.unique(labels))
-    if 1 < unique_count < len(labels):
+    metric_labels = labels[metric_mask]
+    metric_X = X[metric_mask]
+    unique_count = len(np.unique(metric_labels))
+    if 1 < unique_count < len(metric_labels):
         try:
-            metrics["silhouette"] = float(silhouette_score(X, labels))
+            metrics["silhouette"] = float(silhouette_score(metric_X, metric_labels))
         except ValueError:
             pass
     return metrics
